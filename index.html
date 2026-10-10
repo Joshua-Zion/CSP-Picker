@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>CSP Picker 灵动拾色</title>
+<style>
+  /* Apple HIG 风格：iOS 深色面板色系、分段控件、大圆角、以留白和底色分层而非边框 */
+  :root {
+    --bg: #1c1c1e;
+    --panel: #2c2c2e;
+    --panel2: #3a3a3c;
+    --panel3: #48484a;
+    --text: #f5f5f7;
+    --muted: #98989f;
+    --accent: #0a84ff;
+    --ok: #30d158;
+    --err: #ff453a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, "SF Pro Text", "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; -webkit-font-smoothing: antialiased; }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+
+  /* 自绘标题栏：右侧只留最小化/关闭，其余靠左 */
+  .titlebar { display: flex; align-items: center; gap: 8px; padding: 8px 16px; -webkit-app-region: drag; position: relative; }
+  .titlebar h1 { position: absolute; left: 50%; transform: translateX(-50%); font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .titlebar .t-spacer { flex: 1; }
+  .hdr-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--err); flex-shrink: 0; }
+  .hdr-dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  #btnSet { -webkit-app-region: no-drag; }
+  #btnSet:hover { background: var(--panel3); }
+  #btnSet:active { filter: brightness(.85); transform: scale(.96); }
+  .winctl { display: flex; -webkit-app-region: no-drag; }
+  .winctl button { border-radius: 7px; padding: 4px 12px; font-size: 13px; background: transparent; }
+  .winctl button:hover { background: var(--panel3); }
+  .winctl #wBtnClose:hover { background: var(--err); color: #fff; }
+
+  .wrap { flex: 1; overflow-y: auto; padding: 0 10px 10px; display: flex; flex-direction: column; gap: 8px; }
+  .card { background: var(--panel); border-radius: 14px; padding: 10px; }
+
+  /* 分段控件（iOS segmented control） */
+  .seg { display: flex; background: var(--panel2); border-radius: 9px; padding: 2px; gap: 2px; }
+  .seg button { flex: 1; border: none; background: transparent; color: var(--text); border-radius: 7px; padding: 6px 10px; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+  .seg button.active { background: var(--panel3); }
+
+  button {
+    background: var(--panel3); color: var(--text); border: none;
+    border-radius: 9px; padding: 8px 14px; font-size: 13px; font-weight: 500; cursor: pointer;
+    font-family: inherit;
+  }
+  button:hover { filter: brightness(1.12); }
+  button:active { filter: brightness(.92); }
+  button.primary { background: var(--accent); color: #fff; }
+  button.small { padding: 5px 10px; font-size: 12px; border-radius: 7px; }
+  button.pinned { background: var(--accent); color: #fff; }
+  button:disabled { opacity: .4; cursor: default; }
+
+  /* 色轮 */
+  .wheel-box { display: flex; justify-content: center; padding: 4px 0 0; }
+  #wheelWrap { position: relative; width: 300px; height: 300px; cursor: crosshair; }
+  #wheelCanvas { width: 300px; height: 300px; display: block; }
+  .wheel-dot { position: absolute; width: 14px; height: 14px; border: 2.5px solid #fff; border-radius: 50%; box-shadow: 0 1px 5px rgba(0,0,0,.6); transform: translate(-50%, -50%); pointer-events: none; }
+
+  /* 色轮右下角：模式切换小图标（圆中方=HSV / 圆中三角=HSL） */
+  .wheel-mode { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 4px; -webkit-app-region: no-drag; }
+  .wheel-mode button { padding: 4px; border-radius: 8px; background: rgba(0,0,0,.3); border: 1px solid transparent; line-height: 0; }
+  .wheel-mode button.active { background: var(--panel3); border-color: var(--accent); }
+  .wheel-mode svg { display: block; }
+
+  /* 三个颜色槽 */
+  .slots { display: flex; gap: 8px; }
+  .slot { flex: 1; border: 2px solid transparent; border-radius: 12px; padding: 6px; cursor: pointer; text-align: center; background: var(--panel2); transition: border-color .12s; }
+  .slot:hover { border-color: var(--panel3); }
+  .slot.active { border-color: var(--accent); }
+  .slot .sw { height: 34px; border-radius: 8px; margin-bottom: 6px; position: relative; overflow: hidden; }
+  .slot .sw .checker { position: absolute; inset: 0; background: repeating-conic-gradient(#5a5a5e 0 25%, #4a4a4e 0 50%) 0 0/10px 10px; }
+  .slot .sw .fill { position: absolute; inset: 0; }
+  .slot .name { font-size: 12px; color: var(--muted); }
+  .slot.active .name { color: var(--text); }
+
+  .current-row { display: none; }
+
+  .row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .row > button { flex: 1; min-width: 120px; }
+
+  /* 色轮左下角：上一次+当前 合为一体圆角矩形（无缝拼接） */
+  .wheel-cur { position: absolute; left: 16px; bottom: 16px; display: flex; border-radius: 8px; overflow: hidden; pointer-events: none; box-shadow: 0 1px 4px rgba(0,0,0,.45); border: 1.5px solid rgba(255,255,255,.25); }
+  .wheel-cur .chip { width: 26px; height: 26px; position: relative; }
+  .wheel-cur .chip.prev { opacity: .8; }
+  .wheel-cur .chip:not(:first-child) { border-left: 1.5px solid rgba(255,255,255,.25); }
+  .wheel-cur .chip .checker { position: absolute; inset: 0; background: repeating-conic-gradient(#55555a 0 25%, #44444a 0 50%) 0 0/10px 10px; }
+  .wheel-cur .chip .fill { position: absolute; inset: 0; }
+
+  /* 滑条：单列显示（同一模式的滑条排在同一列） */
+  .sliders { display: grid; grid-template-columns: 1fr; gap: 6px; }
+  .sl { display: flex; align-items: center; gap: 10px; }
+  .sl label { width: 16px; font-size: 12px; font-weight: 600; color: var(--muted); font-family: "SF Mono", Consolas, monospace; }
+  .sl .track { position: relative; flex: 1; height: 16px; border-radius: 8px; cursor: pointer; }
+  .sl .thumb { position: absolute; top: 50%; width: 14px; height: 22px; border: 2.5px solid #fff; border-radius: 5px; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  .sl .num { width: 44px; font-size: 11px; text-align: right; color: var(--muted); font-family: "SF Mono", Consolas, monospace; user-select: text; }
+
+  /* 设置弹窗（浮动，不影响布局） */
+  .scrim { position: fixed; inset: 0; z-index: 40; display: none; }
+  .scrim.show { display: block; }
+  .popover {
+    position: fixed; top: 48px; right: 16px; z-index: 41;
+    width: min(340px, calc(100vw - 32px));
+    background: var(--panel); border-radius: 16px; padding: 16px;
+    box-shadow: 0 16px 48px rgba(0,0,0,.55);
+    display: none;
+  }
+  .popover.show { display: block; }
+  .popover .status { display: flex; align-items: center; gap: 10px; }
+  .popover .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--err); flex-shrink: 0; }
+  .popover .dot.on { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+  .popover .txt { flex: 1; min-width: 0; }
+  .popover .txt b { display: block; font-size: 13px; }
+  .popover .txt span { color: var(--muted); font-size: 11px; display: block; margin-top: 1px; }
+  .popover .row { margin-top: 12px; }
+  .popover .row > button { min-width: 0; }
+  .popover hr { border: none; border-top: 1px solid var(--panel2); margin: 14px 0; }
+  .pop-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 2px; font-size: 13px; }
+  .pop-row .desc { color: var(--muted); font-size: 11px; display: block; margin-top: 2px; }
+
+  /* iOS 开关 */
+  .switch { position: relative; width: 44px; height: 26px; flex-shrink: 0; cursor: pointer; }
+  .switch input { display: none; }
+  .switch .knob { position: absolute; inset: 0; border-radius: 13px; background: var(--panel3); transition: background .15s; }
+  .switch .knob::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px;
+    border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 3px rgba(0,0,0,.35);
+  }
+  .switch input:checked + .knob { background: var(--ok); }
+  .switch input:checked + .knob::after { left: 20px; }
+
+  .kbd { background: var(--panel3); border-radius: 5px; padding: 1px 6px; font-size: 11px; font-family: "SF Mono", Consolas, monospace; }
+  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--panel3); padding: 9px 18px; border-radius: 12px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 99; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  .toast.show { opacity: 1; }
+  .disabled-zone { opacity: .35; pointer-events: none; }
+
+  /* CSP→工具 同步过渡（100ms 心跳匹配）。
+     色轮指示器不加动画——点哪就是哪（用户偏好） */
+  body.syncing .fill { transition: background .09s linear; }
+  body.syncing .sl .thumb { transition: left .09s linear; }
+  body.syncing .sl .track { transition: background .09s linear; }
+
+  /* 宽度自适应：≥760px 双列 */
+  @media (min-width: 760px) {
+    .wrap { display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
+    #wheelCard { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+  <div class="titlebar">
+    <button id="btnSet" class="small" title="设置（连接配对 / 取色 / 自动注入）">⚙</button>
+    <div class="hdr-dot" id="hdrDot" title="连接状态"></div>
+    <div class="t-spacer"></div>
+    <h1>CSP Picker</h1>
+    <div class="t-spacer"></div>
+    <div class="winctl">
+      <button id="wBtnMin" title="最小化">—</button>
+      <button id="wBtnClose" title="隐藏到托盘（连接保持，不退出）">✕</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <!-- 色轮 -->
+    <div class="card" id="wheelCard" style="position:relative">
+      <div class="wheel-box">
+        <div id="wheelWrap">
+          <canvas id="wheelCanvas"></canvas>
+          <div class="wheel-dot" id="ringDot"></div>
+          <div class="wheel-dot" id="centerDot"></div>
+        </div>
+      </div>
+      <!-- 左下角：上一次+当前（一体圆角矩形） -->
+      <div class="wheel-cur">
+        <div class="chip prev" id="prevChip" title="上一次颜色"><div class="checker"></div><div class="fill" id="prevFill"></div></div>
+        <div class="chip cur" id="curChip" title="当前颜色"><div class="checker"></div><div class="fill" id="curFill"></div></div>
+      </div>
+      <!-- 右下角：色轮模式切换（单图标双状态：圆中三角=HSL / 圆中方=HSV） -->
+      <div class="wheel-mode">
+        <button id="wheelModeBtn" title="HSL 色轮（点击切换为 HSV）">
+          <svg id="wheelModeIcon" width="18" height="18" viewBox="0 0 20 20">
+            <circle cx="10" cy="10" r="8.5" fill="none" stroke="#e8e8ec" stroke-width="2"/>
+            <path d="M 13.5 10 L 6.5 5.8 L 6.5 14.2 Z" fill="#e8e8ec"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- 颜色槽 -->
+    <div class="card">
+      <div class="slots">
+        <div class="slot active" data-slot="fore">
+          <div class="sw"><div class="checker"></div><div class="fill" id="slotForeFill"></div></div>
+          <div class="name">前景色</div>
+        </div>
+        <div class="slot" data-slot="back">
+          <div class="sw"><div class="checker"></div><div class="fill" id="slotBackFill"></div></div>
+          <div class="name">背景色</div>
+        </div>
+        <div class="slot" data-slot="transparent">
+          <div class="sw"><div class="checker"></div></div>
+          <div class="name">透明色</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 滑条 -->
+    <div class="card">
+      <div class="seg" id="sliderTabs">
+        <button data-smode="hsv" class="active">HSV</button>
+        <button data-smode="hsl">HSL</button>
+        <button data-smode="rgb">RGB</button>
+        <button data-smode="cmyk">CMYK</button>
+        <button data-smode="lab">Lab</button>
+      </div>
+      <div class="sliders" id="sliders" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- 设置弹窗 -->
+  <div class="scrim" id="scrim"></div>
+  <div class="popover" id="setPop">
+    <div class="status">
+      <div class="dot" id="dot"></div>
+      <div class="txt">
+        <b id="stTitle">未连接 CSP</b>
+        <span id="stSub">打开 CSP「连接智能手机」后点「扫码配对」</span>
+      </div>
+    </div>
+    <div class="row">
+      <button id="btnPair" class="primary">扫码配对</button>
+      <button id="btnReconn" style="flex:0 0 auto" disabled>重连</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="btnForget" class="small" style="flex:1">忘记配对</button>
+      <button id="btnLog" class="small" style="flex:1">通信日志</button>
+    </div>
+    <hr>
+    <div class="pop-row">
+      <div>屏幕取色<span class="desc">快捷键 <b>Alt+C</b> · 取屏幕任意颜色写入当前槽</span></div>
+      <button id="btnPick" class="small" style="min-width:86px">取色</button>
+    </div>
+    <div class="pop-row">
+      <div>注入当前槽<span class="desc">手动把当前颜色发送到 CSP</span></div>
+      <button id="btnApply" class="small" style="min-width:86px">注入</button>
+    </div>
+    <div class="pop-row">
+      <div>自动注入<span class="desc">颜色变化立即写入 CSP 当前槽</span></div>
+      <label class="switch"><input type="checkbox" id="chkAuto"><span class="knob"></span></label>
+    </div>
+    <div class="pop-row">
+      <div>固定到屏幕<span class="desc">窗口置顶于所有应用之上</span></div>
+      <button id="btnPin" class="small" style="min-width:86px">📌 固定</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="renderer.js"></script>
+</body>
+</html>

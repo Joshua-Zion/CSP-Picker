@@ -1,0 +1,14 @@
+{
+  "name": "csp-picker",
+  "version": "1.0.0",
+  "description": "屏幕取色并直接注入 CLIP STUDIO PAINT 绘画颜色（纯软件，无需硬件）",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "license": "ISC",
+  "dependencies": {
+    "electron": "^44.7.0",
+    "jsqr": "^1.4.0"
+  }
+}

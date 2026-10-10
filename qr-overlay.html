@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #0d0e12; overflow: hidden; cursor: crosshair; }
+  #tip { position: fixed; top: 18px; left: 50%; transform: translateX(-50%); background: rgba(20,20,24,0.9); color: #fff; padding: 10px 18px; border-radius: 8px; font: 13px "Segoe UI", "Microsoft YaHei", sans-serif; pointer-events: none; }
+  canvas { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="tip">在 CSP 的 QR 码上 <b>按住拖出矩形框选</b> · ESC 取消</div>
+<canvas id="cv"></canvas>
+<script src="qr-overlay.js"></script>
+</body>
+</html>
